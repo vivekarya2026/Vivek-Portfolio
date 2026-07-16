@@ -1,0 +1,8 @@
+# Build output
+.next/
+node_modules/
+package-lock.json
+tsconfig.tsbuildinfo
+next-env.d.ts
+
+# Static export (Webflow) lives outside this app; not formatted here

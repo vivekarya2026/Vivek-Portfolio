@@ -1,0 +1,26 @@
+# Dependencies & builds
+node_modules/
+.next/
+out/
+dist/
+.turbo/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+# Vercel
+.vercel
+
+# Local backups from de-Webflow / site sync
+*.bak
+*.dewf.bak
+site/projects.bak/
