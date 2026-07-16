@@ -8,13 +8,22 @@ Two Vercel projects from the same GitHub repo
 ```
 CMS edit/publish ──► Supabase
                          │
-                         ▼  (SITE_DEPLOY_HOOK_URL)
+                         ▼  triggerSiteDeploy()
+              ┌──────────┴──────────┐
+              ▼                     ▼
+   SITE_DEPLOY_HOOK_URL    GITHUB_REBUILD_TOKEN
+   (Vercel Deploy Hook)    (repository_dispatch
+                            → rebuild-site.yml)
+                         │
+                         ▼
                    Vercel rebuilds public site
                    (`npm run build:site:ci` reads Supabase)
                          │
                          ▼
                    Live HTML on portfolio domain
 ```
+
+This repo uses **Option B** (GitHub Actions) because the site project may not have Git connected yet. Either path regenerates `site/` from published Supabase rows.
 
 ## Project 1 — Public portfolio
 

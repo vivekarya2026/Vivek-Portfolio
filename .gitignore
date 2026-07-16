@@ -25,3 +25,4 @@ dist/
 *.dewf.bak
 site/projects.bak/
 site/.dewebflow-backup-*/
+.env*

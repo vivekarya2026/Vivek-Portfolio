@@ -1,0 +1,32 @@
+# Rebuild + deploy the public portfolio whenever the CMS asks
+# (repository_dispatch) or you click "Run workflow".
+#
+# CMS publish → GitHub repository_dispatch → this workflow → vercel deploy
+# The Vercel build runs `build:site:ci`, which reads published Supabase data.
+name: Rebuild public site
+
+on:
+  repository_dispatch:
+    types: [cms-publish]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: Why this rebuild was requested
+        required: false
+        default: manual
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to Vercel (production)
+        run: |
+          npm i -g vercel@latest
+          vercel deploy --prod --yes --token="$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
