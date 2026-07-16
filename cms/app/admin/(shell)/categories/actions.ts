@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { slugify, uniqueSlug } from "@/lib/slug";
+import { triggerSiteDeploy } from "@/lib/trigger-site-deploy";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -34,19 +35,20 @@ export async function saveCategory(
       .update({ name, slug, published })
       .eq("id", id);
     if (error) return { ok: false, error: error.message };
-  } else {
-    const { data, error } = await supabase
-      .from("categories")
-      .insert({ name, slug, published })
-      .select("id")
-      .single();
-    if (error) return { ok: false, error: error.message };
     revalidatePath("/works");
-    return { ok: true, id: data.id };
+    // Category labels appear on published project cards.
+    await triggerSiteDeploy(`category:${slug}`);
+    return { ok: true, id };
   }
 
+  const { data, error } = await supabase
+    .from("categories")
+    .insert({ name, slug, published })
+    .select("id")
+    .single();
+  if (error) return { ok: false, error: error.message };
   revalidatePath("/works");
-  return { ok: true, id };
+  return { ok: true, id: data.id };
 }
 
 export async function deleteCategory(id: string): Promise<ActionResult> {

@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { slugify, uniqueSlug } from "@/lib/slug";
+import { triggerSiteDeploy } from "@/lib/trigger-site-deploy";
 import type { JSONContent } from "@/lib/types";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -62,8 +63,11 @@ export async function saveProject(input: ProjectInput): Promise<ActionResult> {
     .single();
 
   if (error) return { ok: false, error: error.message };
-  // Only revalidate the live route if it's already published.
-  if (data.status === "published") revalidateProject(data.slug);
+  // Only rebuild the public site if it's already published.
+  if (data.status === "published") {
+    revalidateProject(data.slug);
+    await triggerSiteDeploy(`save-project:${data.slug}`);
+  }
   return { ok: true, id: input.id, slug: data.slug };
 }
 
@@ -77,6 +81,7 @@ export async function publishProject(id: string): Promise<ActionResult> {
     .single();
   if (error) return { ok: false, error: error.message };
   revalidateProject(data.slug);
+  await triggerSiteDeploy(`publish:${data.slug}`);
   return { ok: true, slug: data.slug };
 }
 
@@ -90,6 +95,7 @@ export async function unpublishProject(id: string): Promise<ActionResult> {
     .single();
   if (error) return { ok: false, error: error.message };
   revalidateProject(data.slug);
+  await triggerSiteDeploy(`unpublish:${data.slug}`);
   return { ok: true, slug: data.slug };
 }
 
@@ -97,12 +103,15 @@ export async function deleteProject(id: string): Promise<ActionResult> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("projects")
-    .select("slug")
+    .select("slug, status")
     .eq("id", id)
     .single();
   const { error } = await supabase.from("projects").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
   if (data?.slug) revalidateProject(data.slug);
+  if (data?.status === "published") {
+    await triggerSiteDeploy(`delete:${data.slug}`);
+  }
   return { ok: true };
 }
 
@@ -129,6 +138,9 @@ export async function reorderProjects(ids: string[]): Promise<ActionResult> {
   const failed = results.find((r) => r.error);
   if (failed?.error) return { ok: false, error: failed.error.message };
   revalidatePath("/admin/projects");
+  revalidatePath("/works");
+  revalidatePath("/");
+  await triggerSiteDeploy("reorder-projects");
   return { ok: true };
 }
 

@@ -47,3 +47,11 @@ Regenerates `site/works.html`, `site/index.html` featured list, and `site/projec
 2. Set `RESEND_API_KEY` + `ADMIN_EMAIL` in `cms/.env.local`
 
 See [cms/README.md](cms/README.md) for full setup.
+
+## Deploy (Vercel) + auto-sync
+
+CMS publishes regenerate the public site automatically:
+
+**CMS publish → Supabase → Vercel Deploy Hook → `build:site:ci` → live HTML**
+
+Full steps: [docs/03-architecture/vercel-deployment.md](docs/03-architecture/vercel-deployment.md).

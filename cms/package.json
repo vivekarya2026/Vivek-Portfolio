@@ -13,7 +13,8 @@
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
     "migrate:webflow": "tsx --env-file=.env.local scripts/migrate-webflow.ts",
-    "build:site": "tsx --env-file=.env.local scripts/build-site.ts"
+    "build:site": "tsx --env-file=.env.local scripts/build-site.ts",
+    "build:site:ci": "tsx scripts/build-site.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.3",

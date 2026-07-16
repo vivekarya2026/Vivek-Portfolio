@@ -408,6 +408,53 @@ async function applyResumeToStandalonePages() {
   }
 }
 
+// Public site contact form → CMS /api/contact
+function contactApiUrl(): string | null {
+  const explicit = process.env.CONTACT_API_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, "");
+  const site = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (site) return `${site.replace(/\/$/, "")}/api/contact`;
+  return null;
+}
+
+async function applyContactApi() {
+  const api = contactApiUrl();
+  if (!api) {
+    console.log(
+      "  · contact API skipped (set CONTACT_API_URL or NEXT_PUBLIC_SITE_URL)",
+    );
+    return;
+  }
+
+  let html: string;
+  try {
+    html = await readFile(CONTACT_FILE, "utf8");
+  } catch {
+    return;
+  }
+
+  const next = html.replace(
+    /<form([^>]*\bid=["']wf-form-Form["'][^>]*)>/i,
+    (_match, attrs: string) => {
+      if (/data-contact-api=/.test(attrs)) {
+        return `<form${attrs.replace(
+          /data-contact-api=["'][^"']*["']/,
+          `data-contact-api="${api}"`,
+        )}>`;
+      }
+      return `<form${attrs} data-contact-api="${api}">`;
+    },
+  );
+
+  if (next === html) {
+    console.log("  · contact form not found — skipped API wiring");
+    return;
+  }
+  await backupOnce(CONTACT_FILE);
+  await writeFile(CONTACT_FILE, next, "utf8");
+  console.log(`  ✓ contact.html — form → ${api}`);
+}
+
 async function main() {
   console.log("Fetching published projects from CMS…\n");
 
@@ -455,6 +502,9 @@ async function main() {
 
   // 2b) Rewrite resume links on standalone pages (about/contact).
   await applyResumeToStandalonePages();
+
+  // 2c) Point the contact form at the CMS API.
+  await applyContactApi();
 
   // 3) Remove generated project pages whose project no longer exists.
   const files = (await readdir(PROJECTS_DIR)).filter((f) =>

@@ -139,7 +139,12 @@ rich-text body) is swapped in. Navbar, footer, CSS, and scripts stay identical t
 - The generator is **idempotent** — safe to run any time. It reads from `../site`
   (override with `WEBFLOW_EXPORT_DIR=/path npm run build:site`).
 
-Then deploy / re-upload the static site the way you normally host it.
+On Vercel, you usually **don’t** run this by hand in production: publishing in
+`/admin` calls `SITE_DEPLOY_HOOK_URL`, which rebuilds the public site with
+`build:site:ci`. See [../docs/03-architecture/vercel-deployment.md](../docs/03-architecture/vercel-deployment.md).
+
+Locally (or without a deploy hook), still run `npm run build:site` then refresh
+the static server.
 
 ## Custom Collections (admin-only)
 

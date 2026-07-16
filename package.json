@@ -1,0 +1,13 @@
+{
+  "name": "vivek-portfolio",
+  "private": true,
+  "description": "Monorepo root — Vercel public site builds via cms build:site",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build:site": "npm --prefix cms run build:site:ci",
+    "dev:site": "npx serve -l 8080 site",
+    "dev:cms": "npm --prefix cms run dev"
+  }
+}

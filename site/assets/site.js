@@ -149,4 +149,75 @@
   } else {
     window.addEventListener("load", start);
   }
+
+  // Contact form → CMS /api/contact (URL from data-contact-api on the form)
+  function bindContactForm() {
+    var form = document.querySelector("form[data-contact-api]");
+    if (!form || form.getAttribute("data-contact-bound") === "1") return;
+    form.setAttribute("data-contact-bound", "1");
+
+    var api = form.getAttribute("data-contact-api");
+    if (!api) return;
+
+    var submitBtn = form.querySelector('[type="submit"]');
+    var status = document.createElement("div");
+    status.setAttribute("role", "status");
+    status.style.cssText =
+      "margin-top:1rem;font-size:0.875rem;line-height:1.4;display:none";
+    form.appendChild(status);
+
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+
+      var texts = form.querySelectorAll('input[type="text"]');
+      var emailInput = form.querySelector('input[type="email"]');
+      var messageInput = form.querySelector("textarea");
+
+      var payload = {
+        first_name: texts[0] ? String(texts[0].value || "").trim() : "",
+        last_name: texts[1] ? String(texts[1].value || "").trim() : "",
+        email: emailInput ? String(emailInput.value || "").trim() : "",
+        message: messageInput ? String(messageInput.value || "").trim() : "",
+        website: "", // honeypot
+      };
+
+      status.style.display = "block";
+      status.style.color = "#fff";
+      status.textContent = "Sending…";
+      if (submitBtn) submitBtn.disabled = true;
+
+      fetch(api, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+        .then(function (res) {
+          return res.json().then(function (data) {
+            return { ok: res.ok && data && data.ok, error: data && data.error };
+          });
+        })
+        .then(function (result) {
+          if (result.ok) {
+            status.textContent = "Thanks — I’ll be in touch within 24 hours.";
+            form.reset();
+          } else {
+            status.textContent =
+              result.error || "Something went wrong. Please try again.";
+          }
+        })
+        .catch(function () {
+          status.textContent =
+            "Couldn't reach the server. Please try again in a moment.";
+        })
+        .finally(function () {
+          if (submitBtn) submitBtn.disabled = false;
+        });
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bindContactForm);
+  } else {
+    bindContactForm();
+  }
 })();

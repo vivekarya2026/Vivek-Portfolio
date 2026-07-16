@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "npm --prefix cms ci",
+  "buildCommand": "npm --prefix cms run build:site:ci",
+  "outputDirectory": "site",
+  "cleanUrls": true,
+  "trailingSlash": false
+}
