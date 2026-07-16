@@ -447,7 +447,11 @@ async function applyContactApi() {
   );
 
   if (next === html) {
-    console.log("  · contact form not found — skipped API wiring");
+    if (/data-contact-api=["'][^"']*["']/.test(html)) {
+      console.log(`  · contact.html — already → ${api}`);
+    } else {
+      console.log("  · contact form not found — skipped API wiring");
+    }
     return;
   }
   await backupOnce(CONTACT_FILE);
