@@ -38,6 +38,30 @@ const LEGACY_RESUME_URLS = [
   "https://cdn.prod.website-files.com/664eb6bdc72329c8129df03f/67b05bfda3b03ecab894611a_Vivek%20Arya%20OG%20Resume.pdf",
   "https://cdn.prod.website-files.com/664eb6bdc72329c8129df03f/66557a4ab5175fc921f3d474_Vivek%20PD%20Resume%20(1).pdf",
 ];
+// Original Webflow hover-card art (migrated CMS card_image_url is often wrong).
+const HOME_LIST_IMAGE_BY_SLUG: Record<string, string> = {
+  xtudio:
+    "https://cdn.prod.website-files.com/664eb6bec72329c8129df0bb/664f69a02602b22be60dfb78_Frame%20179.png",
+  schoolpal:
+    "https://cdn.prod.website-files.com/664eb6bec72329c8129df0bb/664f6b1af1a4eb0d91c2db83_Frame%202122.png",
+  "doremon-den":
+    "https://cdn.prod.website-files.com/664eb6bec72329c8129df0bb/664f6c68d6c0630be400f9e1_Frame%2021.png",
+  petbow:
+    "https://cdn.prod.website-files.com/664eb6bec72329c8129df0bb/664f6c7744c3f4dc72320a9a_Frame%2053.png",
+  "concept-design-system":
+    "https://cdn.prod.website-files.com/664eb6bec72329c8129df0bb/666698f63ec706f8acf67e40_Slide%2016_9%20-%201.png",
+};
+
+// Short company labels from the original Webflow home list (never use subtitle /
+// long description under the project title — that breaks the hover layout).
+const HOME_COMPANY_BY_SLUG: Record<string, string> = {
+  xtudio: "Xapads Media",
+  schoolpal: "Microsoft Design Challenge",
+  "doremon-den": "Doremon Den",
+  petbow: "Competition Entry",
+  "concept-design-system": "Programming Pathshala",
+};
+
 // How many featured projects to show on the home page.
 const HOME_FEATURED_LIMIT = 5;
 // Marker comment written into generated project pages so we can tell which
@@ -271,9 +295,14 @@ async function buildWorks(projects: Project[]) {
 
 // ── Build one home-page featured item for index.html ──
 function buildHomeItem(p: Project): string {
-  const company = p.company_name ?? p.subtitle ?? "";
+  // Prefer CMS company_name; fall back to original Webflow short labels.
+  // Never fall back to subtitle — those are long descriptions and must stay hidden.
+  const company =
+    (p.company_name && p.company_name.trim()) ||
+    HOME_COMPANY_BY_SLUG[p.slug] ||
+    "";
   const cat = p.categories?.name ?? "";
-  const img = p.card_image_url ?? "";
+  const img = HOME_LIST_IMAGE_BY_SLUG[p.slug] ?? p.card_image_url ?? "";
   const hoverTransform =
     "-webkit-transform:translate3d(0, 0%, 0) scale3d(1, 1, 1) rotateX(0) rotateY(0) rotateZ(0) skew(0, 0);-moz-transform:translate3d(0, 0%, 0) scale3d(1, 1, 1) rotateX(0) rotateY(0) rotateZ(0) skew(0, 0);-ms-transform:translate3d(0, 0%, 0) scale3d(1, 1, 1) rotateX(0) rotateY(0) rotateZ(0) skew(0, 0);transform:translate3d(0, 0%, 0) scale3d(1, 1, 1) rotateX(0) rotateY(0) rotateZ(0) skew(0, 0)";
   const lineTransform =
@@ -286,11 +315,15 @@ function buildHomeItem(p: Project): string {
   const catText = `<div class="text-size-tiny text-style-allcaps text-color-white">${esc(
     cat,
   )}</div>`;
-  return `<div role="listitem" class="w-dyn-item"><a class="work-list-item w-inline-block" href="/projects/${escAttr(
+  // data-w-ids match the original Webflow IX2 targets (hover preview + list item).
+  const LIST_ITEM_WID = "1942688e-2c45-8d2b-5bec-1c1493592356";
+  const WORK_LINK_WID = "54eb8553-1f76-4eab-2c33-f3a2b2f13857";
+  const LIST_IMAGE_WID = "d3eda697-e370-26c6-3aa2-dd1bdc02ade0";
+  return `<div class="w-dyn-item" data-w-id="${LIST_ITEM_WID}" role="listitem" thattextsplit="onHover"><a class="work-list-item w-inline-block" data-w-id="${WORK_LINK_WID}" href="/projects/${escAttr(
     p.slug,
-  )}"><div class="work-list-grid"><div base="100%" class="work-list-title" id="nowThis" thattextsplit="hoverTarget"><h3 class="heading-style-h3 text-color-white">${esc(
+  )}"><div class="work-list-grid"><div base="100%" class="work-list-title w-node-_01521a5e-18ee-4a67-e5ed-a483cfb6ffb0-129df094" id="nowThis" thattextsplit="hoverTarget"><h3 class="heading-style-h3 text-color-white">${esc(
     p.title,
-  )}</h3>${companyLine}</div><div base="20%" class="clip" id="nowThis" thattextsplit="hoverTarget"><div class="hover-text" style="${hoverTransform}">${catText}</div><div class="hover-text bottom-hover-text">${catText}</div></div><div class="list-image"><div class="list-image-item"><div class="list-image-height" style='background-image:url("${escAttr(
+  )}</h3>${companyLine}</div><div base="20%" class="clip w-node-a7ada0ce-0806-a150-89a5-c3732ea87a1e-129df094" id="nowThis" thattextsplit="hoverTarget"><div class="hover-text" style="${hoverTransform}">${catText}</div><div class="hover-text bottom-hover-text">${catText}</div></div><div class="list-image" id="w-node-_24cff470-c792-5f36-a823-d03f369a595f-129df094"><div class="list-image-item"><div class="list-image-height" data-w-id="${LIST_IMAGE_WID}" style='background-image:url("${escAttr(
     img,
   )}")'></div></div></div></div><div class="line"><div class="line-fill" style="${lineTransform}"></div></div></a></div>`;
 }

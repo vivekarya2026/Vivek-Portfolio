@@ -6661,11 +6661,3 @@ figcaption {
     grid-area: 1 / 1 / 2 / 4;
   }
 }
-
-/* Hide Webflow badge on self-hosted export */
-.w-webflow-badge {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
