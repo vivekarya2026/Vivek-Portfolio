@@ -442,22 +442,17 @@ async function applyResumeToStandalonePages() {
 }
 
 // Public site contact form → CMS /api/contact
-function contactApiUrl(): string | null {
+function contactApiUrl(): string {
   const explicit = process.env.CONTACT_API_URL?.trim();
   if (explicit) return explicit.replace(/\/$/, "");
   const site = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (site) return `${site.replace(/\/$/, "")}/api/contact`;
-  return null;
+  if (site && !site.includes("localhost"))
+    return `${site.replace(/\/$/, "")}/api/contact`;
+  return "/api/contact";
 }
 
 async function applyContactApi() {
   const api = contactApiUrl();
-  if (!api) {
-    console.log(
-      "  · contact API skipped (set CONTACT_API_URL or NEXT_PUBLIC_SITE_URL)",
-    );
-    return;
-  }
 
   let html: string;
   try {
