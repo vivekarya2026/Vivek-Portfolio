@@ -1,10 +1,20 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/appwrite/admin";
+import { APPWRITE_BUCKET_ID } from "@/lib/appwrite/config";
+import { ID } from "node-appwrite";
 
 export type UploadResult = { ok: boolean; url?: string; error?: string };
 
 const MAX_BYTES = 8 * 1024 * 1024; // 8MB
+
+/** Returns the public view URL for an Appwrite Storage file. */
+function getPublicUrl(fileId: string): string {
+  const endpoint =
+    process.env.APPWRITE_ENDPOINT ?? "https://cloud.appwrite.io/v1";
+  const projectId = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID!;
+  return `${endpoint}/storage/buckets/${APPWRITE_BUCKET_ID}/files/${fileId}/view?project=${projectId}`;
+}
 
 export async function uploadMedia(formData: FormData): Promise<UploadResult> {
   const file = formData.get("file");
@@ -18,21 +28,24 @@ export async function uploadMedia(formData: FormData): Promise<UploadResult> {
     return { ok: false, error: "Image is too large (max 8MB)." };
   }
 
-  const supabase = await createClient();
-  const ext = file.name.split(".").pop()?.toLowerCase() || "png";
-  const path = `${new Date().getFullYear()}/${crypto.randomUUID()}.${ext}`;
+  try {
+    const { storage } = createAdminClient();
+    const ext = file.name.split(".").pop()?.toLowerCase() || "png";
+    const fileId = ID.unique();
+    // Use a filename that encodes the year prefix for organisation.
+    const year = new Date().getFullYear();
+    const fileName = `${year}_${crypto.randomUUID()}.${ext}`;
 
-  const { error } = await supabase.storage
-    .from("media")
-    .upload(path, file, { contentType: file.type, upsert: false });
+    await storage.createFile(
+      APPWRITE_BUCKET_ID,
+      fileId,
+      new File([file], fileName, { type: file.type }),
+    );
 
-  if (error) return { ok: false, error: error.message };
-
-  const {
-    data: { publicUrl },
-  } = supabase.storage.from("media").getPublicUrl(path);
-
-  return { ok: true, url: publicUrl };
+    return { ok: true, url: getPublicUrl(fileId) };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 export async function uploadResume(formData: FormData): Promise<UploadResult> {
@@ -49,18 +62,19 @@ export async function uploadResume(formData: FormData): Promise<UploadResult> {
     return { ok: false, error: "PDF is too large (max 8MB)." };
   }
 
-  const supabase = await createClient();
-  const path = `resume/${crypto.randomUUID()}.pdf`;
+  try {
+    const { storage } = createAdminClient();
+    const fileId = ID.unique();
+    const fileName = `resume_${crypto.randomUUID()}.pdf`;
 
-  const { error } = await supabase.storage
-    .from("media")
-    .upload(path, file, { contentType: "application/pdf", upsert: false });
+    await storage.createFile(
+      APPWRITE_BUCKET_ID,
+      fileId,
+      new File([file], fileName, { type: "application/pdf" }),
+    );
 
-  if (error) return { ok: false, error: error.message };
-
-  const {
-    data: { publicUrl },
-  } = supabase.storage.from("media").getPublicUrl(path);
-
-  return { ok: true, url: publicUrl };
+    return { ok: true, url: getPublicUrl(fileId) };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }

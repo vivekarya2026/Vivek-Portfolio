@@ -2,7 +2,7 @@ import {
   CollectionHeader,
   EmptyState,
 } from "@/components/admin/collection-chrome";
-import { createClient } from "@/lib/supabase/server";
+import { listCollections } from "@/lib/data/collections";
 import type { CmsCollection } from "@/lib/types";
 import { CollectionsList } from "./collections-list";
 import { NewCollectionButton } from "./new-collection-button";
@@ -10,50 +10,25 @@ import { NewCollectionButton } from "./new-collection-button";
 export const metadata = { title: "Custom Collections - Portfolio CMS" };
 export const dynamic = "force-dynamic";
 
-function isMissingTable(message: string | undefined) {
-  if (!message) return false;
-  return (
-    message.includes("cms_collections") &&
-    (message.includes("schema cache") ||
-      message.includes("does not exist") ||
-      message.includes("Could not find the table"))
-  );
-}
-
 export default async function CollectionsPage() {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("cms_collections")
-    .select("*")
-    .order("created_at", { ascending: false });
+  let collections: CmsCollection[] = [];
+  let errorMsg: string | null = null;
 
-  if (error && isMissingTable(error.message)) {
-    return (
-      <>
-        <CollectionHeader title="Custom Collections">
-          <NewCollectionButton />
-        </CollectionHeader>
-        <EmptyState
-          title="Setup required"
-          description="Run supabase/migrations/0005_custom_collections.sql in the Supabase SQL Editor (that file only). Then refresh this page."
-        />
-      </>
-    );
+  try {
+    collections = await listCollections();
+  } catch (err) {
+    errorMsg = (err as Error).message;
+    console.error("collections list failed:", errorMsg);
   }
 
-  if (error) {
+  if (errorMsg) {
     return (
       <>
         <CollectionHeader title="Custom Collections" />
-        <EmptyState
-          title="Couldn't load collections"
-          description={error.message}
-        />
+        <EmptyState title="Couldn't load collections" description={errorMsg} />
       </>
     );
   }
-
-  const collections = (data ?? []) as CmsCollection[];
 
   return (
     <>
@@ -63,7 +38,7 @@ export default async function CollectionsPage() {
       {collections.length === 0 ? (
         <EmptyState
           title="No custom collections yet"
-          description="Create a collection, define its fields, then add items — all from the admin portal. These stay admin-only (not on the public site yet)."
+          description="Create a collection, define its fields, then add items — all from the admin portal."
           action={<NewCollectionButton />}
         />
       ) : (

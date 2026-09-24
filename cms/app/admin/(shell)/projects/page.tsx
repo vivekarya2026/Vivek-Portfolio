@@ -1,5 +1,5 @@
 import { CollectionHeader, EmptyState } from "@/components/admin/collection-chrome";
-import { createClient } from "@/lib/supabase/server";
+import { listProjects } from "@/lib/data/projects";
 import type { ProjectWithCategory } from "@/lib/types";
 import { NewProjectButton } from "./new-project-button";
 import { ProjectsList } from "./projects-list";
@@ -8,29 +8,24 @@ export const metadata = { title: "Projects - Portfolio CMS" };
 export const dynamic = "force-dynamic";
 
 export default async function ProjectsPage() {
-  const supabase = await createClient();
-  const select = "*, categories(id, name, slug)";
+  let projects: ProjectWithCategory[] = [];
+  let errorMsg: string | null = null;
 
-  // Prefer manual priority (sort_order). Fall back if that column hasn't
-  // been migrated yet so the list never looks empty by accident.
-  let { data, error } = await supabase
-    .from("projects")
-    .select(select)
-    .order("sort_order", { ascending: true })
-    .order("created_at", { ascending: false });
-
-  if (error?.message?.includes("sort_order")) {
-    ({ data, error } = await supabase
-      .from("projects")
-      .select(select)
-      .order("created_at", { ascending: false }));
+  try {
+    projects = await listProjects();
+  } catch (err) {
+    errorMsg = (err as Error).message;
+    console.error("projects list failed:", errorMsg);
   }
 
-  if (error) {
-    console.error("projects list failed:", error.message);
+  if (errorMsg) {
+    return (
+      <>
+        <CollectionHeader title="Projects" />
+        <EmptyState title="Couldn't load projects" description={errorMsg} />
+      </>
+    );
   }
-
-  const projects = (data ?? []) as ProjectWithCategory[];
 
   return (
     <>

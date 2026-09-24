@@ -1,6 +1,12 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import {
+  listPostIdsSlugs,
+  createPost,
+  updatePost,
+  deletePost as deletePostDoc,
+  getPostById,
+} from "@/lib/data/posts";
 import { estimateReadingTime } from "@/lib/format";
 import { slugify, uniqueSlug } from "@/lib/slug";
 import { docToPlainText } from "@/lib/tiptap-text";
@@ -10,12 +16,9 @@ import { redirect } from "next/navigation";
 
 export type ActionResult = { ok: boolean; error?: string; id?: string; slug?: string };
 
-async function takenPostSlugs(ignoreId?: string) {
-  const supabase = await createClient();
-  const { data } = await supabase.from("posts").select("id, slug");
-  return (data ?? [])
-    .filter((p) => p.id !== ignoreId)
-    .map((p) => p.slug as string);
+async function takenPostSlugs(ignoreId?: string): Promise<string[]> {
+  const rows = await listPostIdsSlugs();
+  return rows.filter((p) => p.id !== ignoreId).map((p) => p.slug);
 }
 
 export type PostInput = {
@@ -33,14 +36,12 @@ function revalidatePost(slug: string) {
 }
 
 export async function savePost(input: PostInput): Promise<ActionResult> {
-  const supabase = await createClient();
   const title = input.title.trim() || "Untitled post";
   const slug = uniqueSlug(slugify(title), await takenPostSlugs(input.id));
   const reading_time = estimateReadingTime(docToPlainText(input.body));
 
-  const { data, error } = await supabase
-    .from("posts")
-    .update({
+  try {
+    const updated = await updatePost(input.id, {
       title,
       slug,
       excerpt: input.excerpt,
@@ -48,63 +49,59 @@ export async function savePost(input: PostInput): Promise<ActionResult> {
       body: input.body,
       tags: input.tags,
       reading_time,
-    })
-    .eq("id", input.id)
-    .select("slug, status")
-    .single();
-
-  if (error) return { ok: false, error: error.message };
-  if (data.status === "published") revalidatePost(data.slug);
-  return { ok: true, id: input.id, slug: data.slug };
+    });
+    if (updated.status === "published") revalidatePost(updated.slug);
+    return { ok: true, id: input.id, slug: updated.slug };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 export async function publishPost(id: string): Promise<ActionResult> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("posts")
-    .update({ status: "published", published_at: new Date().toISOString() })
-    .eq("id", id)
-    .select("slug")
-    .single();
-  if (error) return { ok: false, error: error.message };
-  revalidatePost(data.slug);
-  return { ok: true, slug: data.slug };
+  try {
+    const updated = await updatePost(id, {
+      status: "published",
+      published_at: new Date().toISOString(),
+    });
+    revalidatePost(updated.slug);
+    return { ok: true, slug: updated.slug };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 export async function unpublishPost(id: string): Promise<ActionResult> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("posts")
-    .update({ status: "draft" })
-    .eq("id", id)
-    .select("slug")
-    .single();
-  if (error) return { ok: false, error: error.message };
-  revalidatePost(data.slug);
-  return { ok: true, slug: data.slug };
+  try {
+    const updated = await updatePost(id, { status: "draft" });
+    revalidatePost(updated.slug);
+    return { ok: true, slug: updated.slug };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 export async function deletePost(id: string): Promise<ActionResult> {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("posts")
-    .select("slug")
-    .eq("id", id)
-    .single();
-  const { error } = await supabase.from("posts").delete().eq("id", id);
-  if (error) return { ok: false, error: error.message };
-  if (data?.slug) revalidatePost(data.slug);
-  return { ok: true };
+  try {
+    const existing = await getPostById(id);
+    await deletePostDoc(id);
+    if (existing?.slug) revalidatePost(existing.slug);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 export async function createPostAndEdit() {
-  const supabase = await createClient();
   const slug = uniqueSlug(slugify("Untitled post"), await takenPostSlugs());
-  const { data, error } = await supabase
-    .from("posts")
-    .insert({ title: "Untitled post", slug, status: "draft" })
-    .select("id")
-    .single();
-  if (error) return;
-  redirect(`/admin/blog/${data.id}`);
+  try {
+    const created = await createPost({
+      title: "Untitled post",
+      slug,
+      status: "draft",
+      tags: [],
+    });
+    redirect(`/admin/blog/${created.id}`);
+  } catch (err) {
+    console.error("createPostAndEdit failed:", err);
+  }
 }

@@ -1,5 +1,5 @@
 import { AdminShell } from "@/components/admin/admin-shell";
-import { createClient } from "@/lib/supabase/server";
+import { createSessionClient } from "@/lib/appwrite/server";
 import { redirect } from "next/navigation";
 
 export default async function ShellLayout({
@@ -7,12 +7,14 @@ export default async function ShellLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let email = "";
+  try {
+    const { account } = await createSessionClient();
+    const user = await account.get();
+    email = user.email;
+  } catch {
+    redirect("/admin/login");
+  }
 
-  if (!user) redirect("/admin/login");
-
-  return <AdminShell email={user.email ?? "Admin"}>{children}</AdminShell>;
+  return <AdminShell email={email || "Admin"}>{children}</AdminShell>;
 }

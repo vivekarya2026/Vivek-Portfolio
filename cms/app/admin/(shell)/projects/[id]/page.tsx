@@ -1,4 +1,5 @@
-import { createClient } from "@/lib/supabase/server";
+import { getProjectById } from "@/lib/data/projects";
+import { listCategories } from "@/lib/data/categories";
 import { notFound } from "next/navigation";
 import type { Category, Project } from "@/lib/types";
 import { ProjectEditor } from "./project-editor";
@@ -11,11 +12,10 @@ export default async function ProjectEditPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const supabase = await createClient();
 
-  const [{ data: project }, { data: cats }] = await Promise.all([
-    supabase.from("projects").select("*").eq("id", id).single(),
-    supabase.from("categories").select("id, name, slug").order("name"),
+  const [project, cats] = await Promise.all([
+    getProjectById(id),
+    listCategories(),
   ]);
 
   if (!project) notFound();
@@ -23,7 +23,7 @@ export default async function ProjectEditPage({
   return (
     <ProjectEditor
       project={project as Project}
-      categories={(cats ?? []) as Pick<Category, "id" | "name" | "slug">[]}
+      categories={cats as Pick<Category, "id" | "name" | "slug">[]}
     />
   );
 }

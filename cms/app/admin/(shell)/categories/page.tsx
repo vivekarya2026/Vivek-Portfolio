@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { listCategories } from "@/lib/data/categories";
 import { CollectionHeader, EmptyState } from "@/components/admin/collection-chrome";
 import { CategoriesList } from "./categories-list";
 import { NewCategoryButton } from "./new-category-button";
@@ -8,13 +8,23 @@ export const metadata = { title: "Project Categories - Portfolio CMS" };
 export const dynamic = "force-dynamic";
 
 export default async function CategoriesPage() {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("categories")
-    .select("*")
-    .order("created_at", { ascending: false });
+  let categories: Category[] = [];
+  let errorMsg: string | null = null;
 
-  const categories = (data ?? []) as Category[];
+  try {
+    categories = await listCategories();
+  } catch (err) {
+    errorMsg = (err as Error).message;
+  }
+
+  if (errorMsg) {
+    return (
+      <>
+        <CollectionHeader title="Project Categories" />
+        <EmptyState title="Couldn't load categories" description={errorMsg} />
+      </>
+    );
+  }
 
   return (
     <>

@@ -1,5 +1,9 @@
 import { EditorTopbar } from "@/components/admin/editor-chrome";
-import { createClient } from "@/lib/supabase/server";
+import {
+  getCollectionById,
+  getItemById,
+  listFields,
+} from "@/lib/data/collections";
 import type { CmsCollection, CmsField, CmsItem } from "@/lib/types";
 import { notFound } from "next/navigation";
 import { ItemEditor } from "./item-editor";
@@ -12,22 +16,16 @@ export default async function CollectionItemPage({
   params: Promise<{ id: string; itemId: string }>;
 }) {
   const { id, itemId } = await params;
-  const supabase = await createClient();
 
-  const [{ data: collection }, { data: item }, { data: fields }] =
-    await Promise.all([
-      supabase.from("cms_collections").select("*").eq("id", id).maybeSingle(),
-      supabase.from("cms_items").select("*").eq("id", itemId).maybeSingle(),
-      supabase
-        .from("cms_fields")
-        .select("*")
-        .eq("collection_id", id)
-        .order("sort_order", { ascending: true }),
-    ]);
+  const [collection, item, fields] = await Promise.all([
+    getCollectionById(id),
+    getItemById(itemId),
+    listFields(id),
+  ]);
 
   if (!collection || !item || item.collection_id !== id) notFound();
 
-  const normalizedFields = (fields ?? []).map((f) => ({
+  const normalizedFields = fields.map((f) => ({
     ...f,
     options: Array.isArray(f.options) ? f.options : [],
   })) as CmsField[];

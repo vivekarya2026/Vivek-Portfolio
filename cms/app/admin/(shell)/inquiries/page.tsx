@@ -2,55 +2,33 @@ import {
   CollectionHeader,
   EmptyState,
 } from "@/components/admin/collection-chrome";
-import { createClient } from "@/lib/supabase/server";
+import { listInquiries } from "@/lib/data/inquiries";
 import type { ContactSubmission } from "@/lib/types";
 import { InquiriesList } from "./inquiries-list";
 
 export const metadata = { title: "Inquiries - Portfolio CMS" };
 export const dynamic = "force-dynamic";
 
-function isMissingTable(message: string | undefined) {
-  if (!message) return false;
-  return (
-    message.includes("contact_submissions") &&
-    (message.includes("schema cache") ||
-      message.includes("does not exist") ||
-      message.includes("Could not find the table"))
-  );
-}
-
 export default async function InquiriesPage() {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("contact_submissions")
-    .select("*")
-    .order("created_at", { ascending: false });
+  let inquiries: ContactSubmission[] = [];
+  let errorMsg: string | null = null;
 
-  if (error && isMissingTable(error.message)) {
+  try {
+    inquiries = await listInquiries();
+  } catch (err) {
+    errorMsg = (err as Error).message;
+    console.error("inquiries list failed:", errorMsg);
+  }
+
+  if (errorMsg) {
     return (
       <>
         <CollectionHeader title="Inquiries" />
-        <EmptyState
-          title="Setup required"
-          description="Run supabase/migrations/0004_contact_submissions.sql in the Supabase SQL Editor (that file only — do not re-run 0001_init.sql). Then refresh this page."
-        />
+        <EmptyState title="Couldn't load inquiries" description={errorMsg} />
       </>
     );
   }
 
-  if (error) {
-    return (
-      <>
-        <CollectionHeader title="Inquiries" />
-        <EmptyState
-          title="Couldn't load inquiries"
-          description={error.message}
-        />
-      </>
-    );
-  }
-
-  const inquiries = (data ?? []) as ContactSubmission[];
   const unread = inquiries.filter((i) => i.status === "new").length;
 
   return (

@@ -2,7 +2,10 @@ import {
   CollectionHeader,
   EmptyState,
 } from "@/components/admin/collection-chrome";
-import { createClient } from "@/lib/supabase/server";
+import {
+  getCollectionById,
+  listItems,
+} from "@/lib/data/collections";
 import type { CmsCollection, CmsItem } from "@/lib/types";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -17,27 +20,15 @@ export default async function CollectionItemsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const supabase = await createClient();
-  const { data: collection } = await supabase
-    .from("cms_collections")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
+  const collection = await getCollectionById(id);
   if (!collection) notFound();
 
   const col = collection as CmsCollection;
-
-  const { data: items } = await supabase
-    .from("cms_items")
-    .select("*")
-    .eq("collection_id", id)
-    .order("created_at", { ascending: false });
-
-  const list = (items ?? []) as CmsItem[];
+  const items = (await listItems(id)) as CmsItem[];
 
   return (
     <>
-      <CollectionHeader title={col.name} count={list.length}>
+      <CollectionHeader title={col.name} count={items.length}>
         <Link
           href={`/admin/collections/${id}/schema`}
           className="inline-flex h-9 items-center rounded-[--radius-md] border border-border px-3 text-sm text-ink-muted transition-colors hover:border-border-strong hover:text-ink"
@@ -46,7 +37,7 @@ export default async function CollectionItemsPage({
         </Link>
         <NewItemButton collectionId={id} label={col.singular_name || "Item"} />
       </CollectionHeader>
-      {list.length === 0 ? (
+      {items.length === 0 ? (
         <EmptyState
           title={`No ${col.name.toLowerCase()} yet`}
           description={`Create your first ${col.singular_name || "item"}. Define custom fields under Edit fields.`}
@@ -58,7 +49,7 @@ export default async function CollectionItemsPage({
           }
         />
       ) : (
-        <ItemsList items={list} collectionId={id} />
+        <ItemsList items={items} collectionId={id} />
       )}
     </>
   );

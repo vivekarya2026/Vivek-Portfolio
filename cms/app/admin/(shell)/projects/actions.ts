@@ -1,6 +1,12 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import {
+  listProjectIdsSlugs,
+  createProject,
+  updateProject,
+  deleteProject as deleteProjectDoc,
+  getProjectById,
+} from "@/lib/data/projects";
 import { slugify, uniqueSlug } from "@/lib/slug";
 import { triggerSiteDeploy } from "@/lib/trigger-site-deploy";
 import type { JSONContent } from "@/lib/types";
@@ -9,12 +15,9 @@ import { redirect } from "next/navigation";
 
 export type ActionResult = { ok: boolean; error?: string; id?: string; slug?: string };
 
-async function takenProjectSlugs(ignoreId?: string) {
-  const supabase = await createClient();
-  const { data } = await supabase.from("projects").select("id, slug");
-  return (data ?? [])
-    .filter((p) => p.id !== ignoreId)
-    .map((p) => p.slug as string);
+async function takenProjectSlugs(ignoreId?: string): Promise<string[]> {
+  const rows = await listProjectIdsSlugs();
+  return rows.filter((p) => p.id !== ignoreId).map((p) => p.slug);
 }
 
 export type ProjectInput = {
@@ -38,14 +41,12 @@ function revalidateProject(slug: string) {
 }
 
 export async function saveProject(input: ProjectInput): Promise<ActionResult> {
-  const supabase = await createClient();
   const title = input.title.trim() || "Untitled project";
   const base = slugify(title);
   const slug = uniqueSlug(base, await takenProjectSlugs(input.id), undefined);
 
-  const { data, error } = await supabase
-    .from("projects")
-    .update({
+  try {
+    const updated = await updateProject(input.id, {
       title,
       slug,
       subtitle: input.subtitle,
@@ -57,109 +58,97 @@ export async function saveProject(input: ProjectInput): Promise<ActionResult> {
       gallery: input.gallery,
       body: input.body,
       featured: input.featured,
-    })
-    .eq("id", input.id)
-    .select("slug, status")
-    .single();
-
-  if (error) return { ok: false, error: error.message };
-  // Only rebuild the public site if it's already published.
-  if (data.status === "published") {
-    revalidateProject(data.slug);
-    await triggerSiteDeploy(`save-project:${data.slug}`);
+    });
+    if (updated.status === "published") {
+      revalidateProject(updated.slug);
+      await triggerSiteDeploy(`save-project:${updated.slug}`);
+    }
+    return { ok: true, id: input.id, slug: updated.slug };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
   }
-  return { ok: true, id: input.id, slug: data.slug };
 }
 
 export async function publishProject(id: string): Promise<ActionResult> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("projects")
-    .update({ status: "published", published_at: new Date().toISOString() })
-    .eq("id", id)
-    .select("slug")
-    .single();
-  if (error) return { ok: false, error: error.message };
-  revalidateProject(data.slug);
-  await triggerSiteDeploy(`publish:${data.slug}`);
-  return { ok: true, slug: data.slug };
+  try {
+    const updated = await updateProject(id, {
+      status: "published",
+      published_at: new Date().toISOString(),
+    });
+    revalidateProject(updated.slug);
+    await triggerSiteDeploy(`publish:${updated.slug}`);
+    return { ok: true, slug: updated.slug };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 export async function unpublishProject(id: string): Promise<ActionResult> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("projects")
-    .update({ status: "draft" })
-    .eq("id", id)
-    .select("slug")
-    .single();
-  if (error) return { ok: false, error: error.message };
-  revalidateProject(data.slug);
-  await triggerSiteDeploy(`unpublish:${data.slug}`);
-  return { ok: true, slug: data.slug };
+  try {
+    const updated = await updateProject(id, { status: "draft" });
+    revalidateProject(updated.slug);
+    await triggerSiteDeploy(`unpublish:${updated.slug}`);
+    return { ok: true, slug: updated.slug };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 export async function deleteProject(id: string): Promise<ActionResult> {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("projects")
-    .select("slug, status")
-    .eq("id", id)
-    .single();
-  const { error } = await supabase.from("projects").delete().eq("id", id);
-  if (error) return { ok: false, error: error.message };
-  if (data?.slug) revalidateProject(data.slug);
-  if (data?.status === "published") {
-    await triggerSiteDeploy(`delete:${data.slug}`);
+  try {
+    const existing = await getProjectById(id);
+    await deleteProjectDoc(id);
+    if (existing?.slug) revalidateProject(existing.slug);
+    if (existing?.status === "published") {
+      await triggerSiteDeploy(`delete:${existing.slug}`);
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
   }
-  return { ok: true };
 }
 
 export async function createProjectAndEdit() {
-  const supabase = await createClient();
   const slug = uniqueSlug(slugify("Untitled project"), await takenProjectSlugs());
-  const { data, error } = await supabase
-    .from("projects")
-    .insert({ title: "Untitled project", slug, status: "draft" })
-    .select("id")
-    .single();
-  if (error) return;
-  redirect(`/admin/projects/${data.id}`);
+  try {
+    const created = await createProject({
+      title: "Untitled project",
+      slug,
+      status: "draft",
+      gallery: [],
+      featured: false,
+      sort_order: 0,
+    });
+    redirect(`/admin/projects/${created.id}`);
+  } catch (err) {
+    console.error("createProjectAndEdit failed:", err);
+  }
 }
 
 export async function reorderProjects(ids: string[]): Promise<ActionResult> {
-  const supabase = await createClient();
-  // Persist the new priority: array index becomes sort_order.
-  const results = await Promise.all(
-    ids.map((id, index) =>
-      supabase.from("projects").update({ sort_order: index }).eq("id", id),
-    ),
-  );
-  const failed = results.find((r) => r.error);
-  if (failed?.error) return { ok: false, error: failed.error.message };
-  revalidatePath("/admin/projects");
-  revalidatePath("/works");
-  revalidatePath("/");
-  await triggerSiteDeploy("reorder-projects");
-  return { ok: true };
+  try {
+    await Promise.all(
+      ids.map((id, index) => updateProject(id, { sort_order: index })),
+    );
+    revalidatePath("/admin/projects");
+    revalidatePath("/works");
+    revalidatePath("/");
+    await triggerSiteDeploy("reorder-projects");
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 export async function duplicateProject(id: string): Promise<ActionResult> {
-  const supabase = await createClient();
-  const { data: src, error: readErr } = await supabase
-    .from("projects")
-    .select("*")
-    .eq("id", id)
-    .single();
-  if (readErr || !src) return { ok: false, error: "Couldn't read source." };
-
-  const slug = uniqueSlug(
-    slugify(`${src.title} copy`),
-    await takenProjectSlugs(),
-  );
-  const { data, error } = await supabase
-    .from("projects")
-    .insert({
+  try {
+    const src = await getProjectById(id);
+    if (!src) return { ok: false, error: "Couldn't read source." };
+    const slug = uniqueSlug(
+      slugify(`${src.title} copy`),
+      await takenProjectSlugs(),
+    );
+    const created = await createProject({
       title: `${src.title} (copy)`,
       slug,
       subtitle: src.subtitle,
@@ -172,9 +161,10 @@ export async function duplicateProject(id: string): Promise<ActionResult> {
       body: src.body,
       featured: false,
       status: "draft",
-    })
-    .select("id")
-    .single();
-  if (error) return { ok: false, error: error.message };
-  return { ok: true, id: data.id };
+      sort_order: 0,
+    });
+    return { ok: true, id: created.id };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }

@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { getSetting } from "@/lib/data/settings";
 import { CollectionHeader } from "@/components/admin/collection-chrome";
 import { SettingsForm } from "./settings-form";
 
@@ -6,14 +6,7 @@ export const metadata = { title: "Settings - Portfolio CMS" };
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("settings")
-    .select("value")
-    .eq("key", "resume_url")
-    .maybeSingle();
-
-  const resumeUrl = (data?.value as string | null) ?? null;
+  const resumeUrl = await getSetting("resume_url");
 
   return (
     <>

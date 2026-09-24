@@ -1,4 +1,4 @@
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createInquiry, countRecentByEmail } from "@/lib/data/inquiries";
 import { NextResponse, type NextRequest } from "next/server";
 import { Resend } from "resend";
 
@@ -20,7 +20,6 @@ function corsHeaders(origin: string | null) {
     origin &&
     (allowed.includes(origin) ||
       allowed.includes("*") ||
-      // Allow same-origin CMS previews
       origin === process.env.NEXT_PUBLIC_SITE_URL);
 
   return {
@@ -74,17 +73,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = createAdminClient();
-
     // Simple rate limit: max N submissions from the same email per hour.
     const since = new Date(Date.now() - RATE_WINDOW_MS).toISOString();
-    const { count } = await supabase
-      .from("contact_submissions")
-      .select("id", { count: "exact", head: true })
-      .eq("email", email)
-      .gte("created_at", since);
+    const recentCount = await countRecentByEmail(email, since);
 
-    if ((count ?? 0) >= RATE_MAX) {
+    if (recentCount >= RATE_MAX) {
       return NextResponse.json(
         {
           ok: false,
@@ -95,10 +88,10 @@ export async function POST(request: NextRequest) {
     }
 
     const fullName = [firstName, lastName].filter(Boolean).join(" ");
-    const adminEmail =
-      process.env.ADMIN_EMAIL ?? "aryavivekiitbhu@gmail.com";
+    const adminEmail = process.env.ADMIN_EMAIL ?? "aryavivekiitbhu@gmail.com";
     const fromEmail =
-      process.env.CONTACT_FROM_EMAIL ?? "Portfolio Contact <onboarding@resend.dev>";
+      process.env.CONTACT_FROM_EMAIL ??
+      "Portfolio Contact <onboarding@resend.dev>";
 
     let emailSent = false;
     let emailError: string | null = null;
@@ -148,29 +141,24 @@ export async function POST(request: NextRequest) {
       emailError = "RESEND_API_KEY is not configured";
     }
 
-    const { error: insertError } = await supabase
-      .from("contact_submissions")
-      .insert({
+    try {
+      await createInquiry({
         first_name: firstName,
         last_name: lastName,
         email,
         message,
-        status: "new",
         email_sent: emailSent,
         email_error: emailError,
         source: request.headers.get("origin") ?? "unknown",
       });
-
-    if (insertError) {
-      console.error("contact insert failed:", insertError.message);
+    } catch (insertErr) {
+      console.error("contact insert failed:", insertErr);
       return NextResponse.json(
         { ok: false, error: "Couldn't save your message. Please try again." },
         { status: 500, headers },
       );
     }
 
-    // Still succeed for the visitor if we saved the row, even if email failed —
-    // admin can read it in the CMS. Surface email issues only in logs/CMS.
     if (!emailSent) {
       console.error("contact email failed:", emailError);
     }

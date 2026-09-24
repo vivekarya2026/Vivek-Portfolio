@@ -1,41 +1,48 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import {
+  listCollectionIdsSlugs,
+  listFieldIdsSlugs,
+  listItemIdsSlugs,
+  createCollection,
+  updateCollection,
+  deleteCollection as deleteCollectionDoc,
+  createField,
+  updateField as updateFieldDoc,
+  deleteField as deleteFieldDoc,
+  updateFieldSortOrder,
+  getMaxSortOrder,
+  createItem,
+  updateItem,
+  setItemStatus as setItemStatusDoc,
+  deleteItem as deleteItemDoc,
+} from "@/lib/data/collections";
 import { slugify, uniqueSlug } from "@/lib/slug";
-import type { CmsFieldType, JSONContent, Status } from "@/lib/types";
+import type { CmsFieldType, Status } from "@/lib/types";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 export type ActionResult = { ok: boolean; error?: string; id?: string };
 
-async function takenCollectionSlugs(ignoreId?: string) {
-  const supabase = await createClient();
-  const { data } = await supabase.from("cms_collections").select("id, slug");
-  return (data ?? [])
-    .filter((c) => c.id !== ignoreId)
-    .map((c) => c.slug as string);
+async function takenCollectionSlugs(ignoreId?: string): Promise<string[]> {
+  const rows = await listCollectionIdsSlugs();
+  return rows.filter((c) => c.id !== ignoreId).map((c) => c.slug);
 }
 
-async function takenFieldSlugs(collectionId: string, ignoreId?: string) {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("cms_fields")
-    .select("id, slug")
-    .eq("collection_id", collectionId);
-  return (data ?? [])
-    .filter((f) => f.id !== ignoreId)
-    .map((f) => f.slug as string);
+async function takenFieldSlugs(
+  collectionId: string,
+  ignoreId?: string,
+): Promise<string[]> {
+  const rows = await listFieldIdsSlugs(collectionId);
+  return rows.filter((f) => f.id !== ignoreId).map((f) => f.slug);
 }
 
-async function takenItemSlugs(collectionId: string, ignoreId?: string) {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("cms_items")
-    .select("id, slug")
-    .eq("collection_id", collectionId);
-  return (data ?? [])
-    .filter((i) => i.id !== ignoreId)
-    .map((i) => i.slug as string);
+async function takenItemSlugs(
+  collectionId: string,
+  ignoreId?: string,
+): Promise<string[]> {
+  const rows = await listItemIdsSlugs(collectionId);
+  return rows.filter((i) => i.id !== ignoreId).map((i) => i.slug);
 }
 
 function revalidateCollection(id: string) {
@@ -45,17 +52,15 @@ function revalidateCollection(id: string) {
 }
 
 export async function createCollectionAndEdit() {
-  const supabase = await createClient();
   const name = "Untitled Collection";
   const slug = uniqueSlug(slugify(name), await takenCollectionSlugs());
-  const { data, error } = await supabase
-    .from("cms_collections")
-    .insert({ name, slug, singular_name: "Item" })
-    .select("id")
-    .single();
-  if (error || !data) return;
-  revalidatePath("/admin/collections");
-  redirect(`/admin/collections/${data.id}/schema`);
+  try {
+    const created = await createCollection({ name, slug, singular_name: "Item" });
+    revalidatePath("/admin/collections");
+    redirect(`/admin/collections/${created.id}/schema`);
+  } catch (err) {
+    console.error("createCollectionAndEdit failed:", err);
+  }
 }
 
 export async function saveCollection(input: {
@@ -63,28 +68,26 @@ export async function saveCollection(input: {
   name: string;
   singular_name: string;
 }): Promise<ActionResult> {
-  const supabase = await createClient();
   const name = input.name.trim() || "Untitled Collection";
   const singular_name = input.singular_name.trim() || "Item";
-  const slug = uniqueSlug(
-    slugify(name),
-    await takenCollectionSlugs(input.id),
-  );
-  const { error } = await supabase
-    .from("cms_collections")
-    .update({ name, slug, singular_name })
-    .eq("id", input.id);
-  if (error) return { ok: false, error: error.message };
-  revalidateCollection(input.id);
-  return { ok: true, id: input.id };
+  const slug = uniqueSlug(slugify(name), await takenCollectionSlugs(input.id));
+  try {
+    await updateCollection(input.id, { name, slug, singular_name });
+    revalidateCollection(input.id);
+    return { ok: true, id: input.id };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 export async function deleteCollection(id: string): Promise<ActionResult> {
-  const supabase = await createClient();
-  const { error } = await supabase.from("cms_collections").delete().eq("id", id);
-  if (error) return { ok: false, error: error.message };
-  revalidatePath("/admin/collections");
-  return { ok: true };
+  try {
+    await deleteCollectionDoc(id);
+    revalidatePath("/admin/collections");
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 export async function addField(input: {
@@ -94,26 +97,11 @@ export async function addField(input: {
   required?: boolean;
   options?: string[];
 }): Promise<ActionResult> {
-  const supabase = await createClient();
   const name = input.name.trim() || "New field";
-  const slug = uniqueSlug(
-    slugify(name),
-    await takenFieldSlugs(input.collection_id),
-  );
-
-  const { data: maxRow } = await supabase
-    .from("cms_fields")
-    .select("sort_order")
-    .eq("collection_id", input.collection_id)
-    .order("sort_order", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const sort_order = (maxRow?.sort_order ?? -1) + 1;
-
-  const { data, error } = await supabase
-    .from("cms_fields")
-    .insert({
+  const slug = uniqueSlug(slugify(name), await takenFieldSlugs(input.collection_id));
+  const sort_order = (await getMaxSortOrder(input.collection_id)) + 1;
+  try {
+    const created = await createField({
       collection_id: input.collection_id,
       name,
       slug,
@@ -121,12 +109,12 @@ export async function addField(input: {
       required: input.required ?? false,
       options: input.options ?? [],
       sort_order,
-    })
-    .select("id")
-    .single();
-  if (error) return { ok: false, error: error.message };
-  revalidateCollection(input.collection_id);
-  return { ok: true, id: data.id };
+    });
+    revalidateCollection(input.collection_id);
+    return { ok: true, id: created.id };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 export async function updateField(input: {
@@ -136,73 +124,69 @@ export async function updateField(input: {
   required: boolean;
   options?: string[];
 }): Promise<ActionResult> {
-  const supabase = await createClient();
   const name = input.name.trim() || "Field";
   const slug = uniqueSlug(
     slugify(name),
     await takenFieldSlugs(input.collection_id, input.id),
   );
-  const { error } = await supabase
-    .from("cms_fields")
-    .update({
+  try {
+    await updateFieldDoc(input.id, {
       name,
       slug,
       required: input.required,
       options: input.options ?? [],
-    })
-    .eq("id", input.id);
-  if (error) return { ok: false, error: error.message };
-  revalidateCollection(input.collection_id);
-  return { ok: true, id: input.id };
+    });
+    revalidateCollection(input.collection_id);
+    return { ok: true, id: input.id };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 export async function deleteField(
   id: string,
   collectionId: string,
 ): Promise<ActionResult> {
-  const supabase = await createClient();
-  const { error } = await supabase.from("cms_fields").delete().eq("id", id);
-  if (error) return { ok: false, error: error.message };
-  revalidateCollection(collectionId);
-  return { ok: true };
+  try {
+    await deleteFieldDoc(id);
+    revalidateCollection(collectionId);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 export async function reorderFields(
   collectionId: string,
   orderedIds: string[],
 ): Promise<ActionResult> {
-  const supabase = await createClient();
-  const updates = orderedIds.map((id, index) =>
-    supabase.from("cms_fields").update({ sort_order: index }).eq("id", id),
-  );
-  const results = await Promise.all(updates);
-  const failed = results.find((r) => r.error);
-  if (failed?.error) return { ok: false, error: failed.error.message };
-  revalidateCollection(collectionId);
-  return { ok: true };
+  try {
+    await Promise.all(
+      orderedIds.map((id, index) => updateFieldSortOrder(id, index)),
+    );
+    revalidateCollection(collectionId);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 export async function createItemAndEdit(collectionId: string) {
-  const supabase = await createClient();
   const name = "Untitled item";
-  const slug = uniqueSlug(
-    slugify(name),
-    await takenItemSlugs(collectionId),
-  );
-  const { data, error } = await supabase
-    .from("cms_items")
-    .insert({
+  const slug = uniqueSlug(slugify(name), await takenItemSlugs(collectionId));
+  try {
+    const created = await createItem({
       collection_id: collectionId,
       name,
       slug,
       status: "draft",
       data: {},
-    })
-    .select("id")
-    .single();
-  if (error || !data) return;
-  revalidateCollection(collectionId);
-  redirect(`/admin/collections/${collectionId}/items/${data.id}`);
+    });
+    revalidateCollection(collectionId);
+    redirect(`/admin/collections/${collectionId}/items/${created.id}`);
+  } catch (err) {
+    console.error("createItemAndEdit failed:", err);
+  }
 }
 
 export async function saveItem(input: {
@@ -211,20 +195,21 @@ export async function saveItem(input: {
   name: string;
   data: Record<string, unknown>;
 }): Promise<ActionResult> {
-  const supabase = await createClient();
   const name = input.name.trim() || "Untitled item";
   const slug = uniqueSlug(
     slugify(name),
     await takenItemSlugs(input.collection_id, input.id),
   );
-  const { error } = await supabase
-    .from("cms_items")
-    .update({ name, slug, data: input.data })
-    .eq("id", input.id);
-  if (error) return { ok: false, error: error.message };
-  revalidateCollection(input.collection_id);
-  revalidatePath(`/admin/collections/${input.collection_id}/items/${input.id}`);
-  return { ok: true, id: input.id };
+  try {
+    await updateItem(input.id, { name, slug, data: input.data });
+    revalidateCollection(input.collection_id);
+    revalidatePath(
+      `/admin/collections/${input.collection_id}/items/${input.id}`,
+    );
+    return { ok: true, id: input.id };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 export async function setItemStatus(
@@ -232,30 +217,28 @@ export async function setItemStatus(
   collectionId: string,
   status: Status,
 ): Promise<ActionResult> {
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("cms_items")
-    .update({
-      status,
-      published_at: status === "published" ? new Date().toISOString() : null,
-    })
-    .eq("id", id);
-  if (error) return { ok: false, error: error.message };
-  revalidateCollection(collectionId);
-  revalidatePath(`/admin/collections/${collectionId}/items/${id}`);
-  return { ok: true };
+  try {
+    await setItemStatusDoc(id, status);
+    revalidateCollection(collectionId);
+    revalidatePath(`/admin/collections/${collectionId}/items/${id}`);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
 export async function deleteItem(
   id: string,
   collectionId: string,
 ): Promise<ActionResult> {
-  const supabase = await createClient();
-  const { error } = await supabase.from("cms_items").delete().eq("id", id);
-  if (error) return { ok: false, error: error.message };
-  revalidateCollection(collectionId);
-  return { ok: true };
+  try {
+    await deleteItemDoc(id);
+    revalidateCollection(collectionId);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
 }
 
-/** Keep TypeScript happy for richtext payloads stored in jsonb. */
-export type RichValue = JSONContent | null;
+/** Keep TypeScript happy for richtext payloads stored in JSON. */
+export type RichValue = import("@/lib/types").JSONContent | null;

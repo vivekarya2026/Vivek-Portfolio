@@ -1,5 +1,5 @@
 import { CollectionHeader, EmptyState } from "@/components/admin/collection-chrome";
-import { createClient } from "@/lib/supabase/server";
+import { listPosts } from "@/lib/data/posts";
 import type { Post } from "@/lib/types";
 import { NewPostButton } from "./new-post-button";
 import { PostsList } from "./posts-list";
@@ -8,13 +8,23 @@ export const metadata = { title: "Blog Posts - Portfolio CMS" };
 export const dynamic = "force-dynamic";
 
 export default async function BlogPage() {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("posts")
-    .select("*")
-    .order("created_at", { ascending: false });
+  let posts: Post[] = [];
+  let errorMsg: string | null = null;
 
-  const posts = (data ?? []) as Post[];
+  try {
+    posts = await listPosts();
+  } catch (err) {
+    errorMsg = (err as Error).message;
+  }
+
+  if (errorMsg) {
+    return (
+      <>
+        <CollectionHeader title="Blog Posts" />
+        <EmptyState title="Couldn't load posts" description={errorMsg} />
+      </>
+    );
+  }
 
   return (
     <>

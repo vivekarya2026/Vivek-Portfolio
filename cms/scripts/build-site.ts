@@ -19,7 +19,7 @@
  *
  * Safe to re-run. Only published projects are rendered.
  */
-import { createClient } from "@supabase/supabase-js";
+import { Client, Databases, Query } from "node-appwrite";
 import { readFile, readdir, writeFile, unlink, copyFile } from "node:fs/promises";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
@@ -68,24 +68,55 @@ const HOME_FEATURED_LIMIT = 5;
 // files this script owns (and may delete when a project is removed).
 const GEN_MARKER = "<!-- cms:generated -->";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+function parseJsonField<T>(raw: unknown, fallback: T): T {
+  if (raw === null || raw === undefined) return fallback;
+  if (typeof raw !== "string") return raw as T;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
 
-if (
-  !SUPABASE_URL ||
-  !SERVICE_KEY ||
-  SUPABASE_URL.includes("placeholder") ||
-  SERVICE_KEY.includes("placeholder")
-) {
+// ── Appwrite client (replaces Supabase) ─────────────────────────────────────
+const APPWRITE_ENDPOINT =
+  process.env.APPWRITE_ENDPOINT ?? "https://cloud.appwrite.io/v1";
+const APPWRITE_PROJECT_ID = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID!;
+const APPWRITE_API_KEY = process.env.APPWRITE_API_KEY!;
+const APPWRITE_DATABASE_ID = process.env.APPWRITE_DATABASE_ID ?? "portfolio-cms";
+
+if (!APPWRITE_PROJECT_ID || !APPWRITE_API_KEY) {
   console.error(
-    "Missing real Supabase credentials. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local first.",
+    "Missing NEXT_PUBLIC_APPWRITE_PROJECT_ID or APPWRITE_API_KEY in .env.local.",
   );
   process.exit(1);
 }
 
-const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
-  auth: { persistSession: false },
-});
+const awClient = new Client()
+  .setEndpoint(APPWRITE_ENDPOINT)
+  .setProject(APPWRITE_PROJECT_ID)
+  .setKey(APPWRITE_API_KEY);
+
+const awDb = new Databases(awClient);
+
+async function fetchAllDocs(
+  collectionId: string,
+  queries: string[],
+): Promise<Record<string, unknown>[]> {
+  const all: Record<string, unknown>[] = [];
+  let cursor: string | undefined;
+  while (true) {
+    const page = await awDb.listDocuments(APPWRITE_DATABASE_ID, collectionId, [
+      ...queries,
+      ...(cursor ? [Query.cursorAfter(cursor)] : []),
+      Query.limit(100),
+    ]);
+    all.push(...(page.documents as unknown as Record<string, unknown>[]));
+    if (all.length >= page.total || page.documents.length === 0) break;
+    cursor = page.documents[page.documents.length - 1].$id;
+  }
+  return all;
+}
 
 // ── Types (mirrors the Supabase projects table) ──
 type TiptapNode = {
@@ -491,29 +522,62 @@ async function main() {
   console.log("Fetching published projects from CMS…\n");
 
   // Resume URL is applied to every regenerated page (and about/contact).
-  const { data: resumeRow } = await supabase
-    .from("settings")
-    .select("value")
-    .eq("key", "resume_url")
-    .maybeSingle();
+  let resumeRow: Record<string, unknown> | null = null;
+  try {
+    const res = await awDb.listDocuments(APPWRITE_DATABASE_ID, "settings", [
+      Query.equal("key", "resume_url"),
+      Query.limit(1),
+    ]);
+    resumeRow = res.documents.length > 0
+      ? (res.documents[0] as unknown as Record<string, unknown>)
+      : null;
+  } catch {
+    // settings collection may not exist yet
+  }
   RESUME_URL = (resumeRow?.value as string | null) ?? null;
   if (RESUME_URL) console.log(`Resume link → ${RESUME_URL}\n`);
 
-  const { data, error } = await supabase
-    .from("projects")
-    .select(
-      "id, title, slug, subtitle, company_name, live_link, project_date, card_image_url, gallery, body, featured, sort_order, status, categories(name)",
-    )
-    .eq("status", "published")
-    .order("sort_order", { ascending: true })
-    .order("project_date", { ascending: false, nullsFirst: false });
-
-  if (error) {
-    console.error("Failed to load projects:", error.message);
+  // Fetch published projects from Appwrite
+  let projectDocs: Record<string, unknown>[] = [];
+  try {
+    projectDocs = await fetchAllDocs("projects", [
+      Query.equal("status", "published"),
+      Query.orderAsc("sort_order"),
+    ]);
+  } catch (err) {
+    console.error("Failed to load projects:", (err as Error).message);
     process.exit(1);
   }
 
-  const projects = (data ?? []) as unknown as Project[];
+  // Fetch categories for join
+  let catDocs: Record<string, unknown>[] = [];
+  try {
+    catDocs = await fetchAllDocs("categories", []);
+  } catch {
+    // ignore
+  }
+  const catMap = new Map(catDocs.map((c) => [c.$id as string, c.name as string]));
+
+  // Map to Project type
+  const projects: Project[] = projectDocs.map((d) => ({
+    id: d.$id as string,
+    title: d.title as string,
+    slug: d.slug as string,
+    subtitle: (d.subtitle as string | null) ?? null,
+    company_name: (d.company_name as string | null) ?? null,
+    live_link: (d.live_link as string | null) ?? null,
+    project_date: (d.project_date as string | null) ?? null,
+    card_image_url: (d.card_image_url as string | null) ?? null,
+    gallery: parseJsonField<string[]>(d.gallery, []),
+    body: parseJsonField<TiptapNode | null>(d.body, null),
+    featured: (d.featured as boolean | null) ?? false,
+    sort_order: (d.sort_order as number | null) ?? 0,
+    status: d.status as string,
+    categories: d.category_id
+      ? { name: catMap.get(d.category_id as string) ?? "" }
+      : null,
+  }));
+
   console.log(`Found ${projects.length} published project(s).\n`);
 
   // 1) Rebuild the works listing.

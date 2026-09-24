@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { getPostById } from "@/lib/data/posts";
 import { notFound } from "next/navigation";
 import type { Post } from "@/lib/types";
 import { PostEditor } from "./post-editor";
@@ -11,8 +11,7 @@ export default async function PostEditPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const supabase = await createClient();
-  const { data } = await supabase.from("posts").select("*").eq("id", id).single();
-  if (!data) notFound();
-  return <PostEditor post={data as Post} />;
+  const post = await getPostById(id);
+  if (!post) notFound();
+  return <PostEditor post={post as Post} />;
 }

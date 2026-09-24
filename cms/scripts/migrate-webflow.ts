@@ -1,4 +1,10 @@
 /**
+ * @deprecated LEGACY SCRIPT — no longer used after the Supabase → Appwrite migration.
+ *
+ * This was a one-time migration to import Webflow-exported project pages into
+ * Supabase. Since we've migrated to Appwrite, the data already exists there.
+ * Kept for historical reference only.
+ *
  * One-time migration: import the existing Webflow-exported project pages into
  * Supabase (projects table), converting the .w-richtext body into Tiptap JSON,
  * downloading Webflow CDN images into Supabase Storage, and preserving slugs so
