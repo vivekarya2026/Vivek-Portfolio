@@ -16,7 +16,7 @@ export const config = {
   matcher: ["/admin/:path*"],
 };
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Always allow the login page.
@@ -56,3 +56,5 @@ function redirectToLogin(request: NextRequest) {
   url.searchParams.set("next", request.nextUrl.pathname);
   return NextResponse.redirect(url);
 }
+
+export default proxy;
