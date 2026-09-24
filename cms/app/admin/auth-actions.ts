@@ -50,6 +50,29 @@ export async function signIn(
   redirect(next.startsWith("/admin") ? next : "/admin/projects");
 }
 
+/**
+ * Called client-side after a successful WebAuthn passkey authentication.
+ * Receives the session secret from the browser SDK and stores it as an
+ * httpOnly cookie so the proxy can validate it.
+ */
+export async function setPasskeySession(
+  secret: string,
+  next: string,
+): Promise<{ error?: string }> {
+  if (!secret) return { error: "No session secret provided." };
+
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE, secret, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30, // 30 days
+  });
+
+  redirect(next.startsWith("/admin") ? next : "/admin/projects");
+}
+
 export async function signOut() {
   const cookieStore = await cookies();
   const session = cookieStore.get(SESSION_COOKIE)?.value;
