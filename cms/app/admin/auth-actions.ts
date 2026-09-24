@@ -5,7 +5,7 @@ import {
   NEXT_PUBLIC_APPWRITE_PROJECT_ID,
 } from "@/lib/appwrite/auth-helpers";
 import { SESSION_COOKIE } from "@/lib/appwrite/server";
-import { Client, Account } from "node-appwrite";
+import { Client, Account, Users } from "node-appwrite";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -23,19 +23,41 @@ export async function signIn(
     return { error: "Enter your email and password." };
   }
 
-  // Create session via node-appwrite (server-side, so we can grab the secret).
-  const client = new Client()
+  const APPWRITE_API_KEY = process.env.APPWRITE_API_KEY!;
+
+  // Step 1: Verify credentials using Account (no API key) — this validates
+  // the email/password pair and tells us if they're correct.
+  const clientNoKey = new Client()
     .setEndpoint(APPWRITE_ENDPOINT)
     .setProject(NEXT_PUBLIC_APPWRITE_PROJECT_ID);
 
-  const account = new Account(client);
+  const accountNoKey = new Account(clientNoKey);
+
+  try {
+    // This validates credentials. The secret it returns may be empty in some
+    // Appwrite configs, so we only use it to confirm the password is correct.
+    await accountNoKey.createEmailPasswordSession(email, password);
+  } catch {
+    return { error: "Those credentials didn't work. Try again." };
+  }
+
+  // Step 2: Create a proper session secret via the Admin Users API.
+  // Users.createSession() always returns a populated secret/JWT.
+  const adminClient = new Client()
+    .setEndpoint(APPWRITE_ENDPOINT)
+    .setProject(NEXT_PUBLIC_APPWRITE_PROJECT_ID)
+    .setKey(APPWRITE_API_KEY);
+
+  const users = new Users(adminClient);
 
   let secret: string;
   try {
-    const session = await account.createEmailPasswordSession(email, password);
+    const session = await users.createSession("admin");
     secret = session.secret;
-  } catch {
-    return { error: "Those credentials didn't work. Try again." };
+    if (!secret) throw new Error("Empty secret");
+  } catch (e) {
+    console.error("createSession error:", e);
+    return { error: "Session creation failed. Try again." };
   }
 
   const cookieStore = await cookies();
